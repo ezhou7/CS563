@@ -1,0 +1,97 @@
+%% dock the figures
+set(0,'DefaultFigureWindowStyle','docked')
+
+% get list of frames
+frame_list = dir(‘/2D_images/*jpg’);
+
+%% load position data
+load(data);
+
+%% define main variables
+dt = 1; % sampling rate
+start_frame = 1; % starting frame
+u = 0,005 % define acceleration magnitude
+Cell = [data(start_frame,1);data(start_frame,2);0;0] % initial state
+Cell_estimate = Cell;
+thn_x = 1; % [self-define] measurement noise in the x direction (how confident of the estimated result)
+thn_y = 1; % [self-define]measurement noise in the y direction
+noise_magnitude = .1; % [self-define]how fast the objects changes positions
+Ez = [thn_x 0; 0 thn_y]
+Ex = [dt^4/4  0       dt^3/2  0;
+      0       dt^4/4  0       dt^3/2;
+      dt^3/2  0       dt^2    0;
+      0       dt^3/2  0       dt^2] * noise_magnitude^2
+P = Ex
+
+%% define coefficient matrix
+A = [1 0 dt 0; 0 1 0 dt;0 0 1 0;0 0 0 1];
+B = [(dt^2/2);(dt^2/2);dt; dt]
+C = [1 0 0 0;0 1 0 0]
+
+%%initialize result variables
+%% estimated position of the cell in the next frame
+Cell_location_measure = [];
+
+%% initialize estimation variables
+Cell_location_estimate = [];
+vel_estimate = []
+predic_state = []
+predic_var = [];
+
+
+%% Kalman Filter-estimate and update
+for t = start_frame:length(frame_list)
+	% load the image
+	img_tmp = double(imread(frame_list(t).name));
+
+	
+	% Cell_estimate = [x_position,y_position,x_velocity,y_velocity]
+	Cell_estimate = A  * Cell_estimate + B * u;
+	
+	% predic_state [x_position,y_position]
+	%predic_state = [predic_state; Cell_estimate(1)];
+	
+	% predict next covariance
+	P = A * P * A’ + Ex;
+	%predic_var = [predic_var; P];
+
+	% Kalman Gain
+	K = P*C’*inv(C*P*C’+Ez)
+	
+	% update the state estimate
+	if ~isnan(Q_location_measure(:,t))
+		Cell_estimate = Cell_estimate + K*(Cell_location_measure(:,t)-C*Cell_estimate);
+	end
+	% update covariance estimation
+	P = (eye(4) - K*C) * P;
+
+	%% store data
+	%Cell_location_estimate = [Cell_location_estimate;Q_estimate(1:2)];
+	%vel_estimate = [vel_estimate; Cell_estimate(3:4)];
+
+	%% plot the image with the tracking
+	imagesc(img);
+	exit off
+	colormap(gray);
+	hold on;
+	plot(Cell_estimate(2), Cell_estimate(1),’.r’);
+
+	hold off;
+	pause(0.1); 
+end	
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
