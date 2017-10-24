@@ -1,22 +1,59 @@
-%% dock the figures
-set(0,'DefaultFigureWindowStyle','docked')
+% %% Cell detection
+clear;
+addpath('./2D_images/');
+addpath('./assignment/');
 
-% get list of frames
-frame_list = dir(‘/2D_images/*jpg’);
+% %get listing of frames
+frame_list = dir('./2D_images/*jpg');
+% % iteratively find cells and save the detected position
+X = cell(1,length(frame_list));
+Y = cell(1,length(frame_list));
 
-%% load position data
-load(data);
-
+for i = 1: length(frame_list)
+      % reduce the dimension to greyscale
+     img_real = (imread(frame_list(i).name));
+     img_tmp = (imread(frame_list(i).name));
+     img_tmp = double(imread(frame_list(i).name));
+     img_tmp = img_tmp(:,:,1);
+     % blur
+     img_tmp = imgaussfilt(img_tmp, 5);  
+% %     img_tmp = bfilter2(img_tmp,5,[3 0.1]);
+% %     img_tmp = medfilt2(img_tmp,[5,5]);
+% %     h = fspecial('average', 5);
+% %     img_tmp = filter2(h, img_tmp);
+     
+     % focus on brighter sider 
+     thresholdValue = 100;
+     binaryImage = img_tmp > thresholdValue;   
+     binaryImage = imfill(binaryImage, 'holes');
+    
+     binaryImage = bwconncomp(binaryImage, 8);
+     stats = regionprops(binaryImage);
+     centroids = cat(1, stats.Centroid);
+     imshow(img_real)
+     hold on
+     centroids(1,:) = [];
+     X{i} = centroids(:,1);
+     Y{i} = centroids(:,2);
+     for a = 1:length(centroids)
+         plot(centroids(a,1),centroids(a,2),'or');
+     end
+%    pause
+%    i
+ end
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Prediction and Estimation
+%% Kalman Filter
 %% define main variables
 dt = 1; % sampling rate
 start_frame = 1; % starting frame
-u = 0,005 % define acceleration magnitude
-Cell = [data(start_frame,1);data(start_frame,2);0;0] % initial state
-Cell_estimate = Cell;
-thn_x = 1; % [self-define] measurement noise in the x direction (how confident of the estimated result)
-thn_y = 1; % [self-define]measurement noise in the y direction
-noise_magnitude = .1; % [self-define]how fast the objects changes positions
+u = 0.5 % define acceleration magnitude
+
+thn_x = .1; % [self-define] measurement noise in the x direction (how confident of the estimated result)
+thn_y = .1; % [self-define] measurement noise in the y direction
 Ez = [thn_x 0; 0 thn_y]
+
+noise_magnitude = .1; % [self-define]how fast the objects changes positions
 Ex = [dt^4/4  0       dt^3/2  0;
       0       dt^4/4  0       dt^3/2;
       dt^3/2  0       dt^2    0;
@@ -28,70 +65,124 @@ A = [1 0 dt 0; 0 1 0 dt;0 0 1 0;0 0 0 1];
 B = [(dt^2/2);(dt^2/2);dt; dt]
 C = [1 0 0 0;0 1 0 0]
 
+
 %%initialize result variables
 %% estimated position of the cell in the next frame
 Cell_location_measure = [];
 
-%% initialize estimation variables
-Cell_location_estimate = [];
-vel_estimate = []
-predic_state = []
-predic_var = [];
+%% initialize estimation variables for two dimensions
+test1 = cell2mat(X(start_frame));
+test2 = cell2mat(Y(start_frame));
+Cell = [test1 test2 zeros(size(test1)) zeros(size(test1))]'; % initial state
+Cell_estimate = nan(4,2000);
+for i = 1:size(test1)
+    Cell_estimate(:,i) = Cell(:,i);
+end
+Cell_location_estimateY = nan(2000);
+Cell_location_estimateX = nan(2000);
+P_estimate = P;
+strk_traks = zeros(1,2000);
+nD = size(test1,1);
+nF = find( isnan(Cell_estimate(1,:)) == 1,1)-1;
+THRESHOLD = 5000;
 
-
-%% Kalman Filter-estimate and update
-for t = start_frame:length(frame_list)
-	% load the image
-	img_tmp = double(imread(frame_list(t).name));
-
-	
-	% Cell_estimate = [x_position,y_position,x_velocity,y_velocity]
-	Cell_estimate = A  * Cell_estimate + B * u;
-	
-	% predic_state [x_position,y_position]
-	%predic_state = [predic_state; Cell_estimate(1)];
-	
-	% predict next covariance
-	P = A * P * A’ + Ex;
-	%predic_var = [predic_var; P];
-
+for t = 1: size(frame_list,1)
+	% load the observation
+	Cell_location_measure = [cell2mat(X(t)) cell2mat(Y(t))];
+	% do the Kalman Filter
+	nD = size(X{t},1);
+	for F = 1:nF
+		Cell_estimate(:,F) = A * Cell_estimate(:,F)+ B*u;
+	end
+ 	% predict next covariance
+	P = A * P * A' + Ex;
 	% Kalman Gain
-	K = P*C’*inv(C*P*C’+Ez)
-	
-	% update the state estimate
-	if ~isnan(Q_location_measure(:,t))
-		Cell_estimate = Cell_estimate + K*(Cell_location_measure(:,t)-C*Cell_estimate);
+	K = P*C'*inv(C*P*C'+Ez)
+
+	%% assign the detections to estimated track position
+	% cost function 
+	est_dist = pdist([Cell_estimate(1:2,1:nF)'; Cell_location_measure]);
+	est_dist = squareform(est_dist);
+	est_dist = est_dist(1:nF,nF+1:end);
+
+	% Hungarian algorithm
+	[assign, cost] = assignmentoptimal(est_dist);
+	assign = assign';
+	% check1: is the detection far from the observation? If yes, reject it.
+	rej = [];
+	for F = 1:nF
+		if assign(F) > 0
+			rej(F) = est_dist(F , assign(F)) < THRESHOLD
+		else
+			rej(F) = 0;
+		end
+	end
+	assign = assign.* rej
+	% apply the assignment to the update
+	k = 1;
+	for F  = 1:size(assign,2) 
+		if assign(F) > 0
+			Cell_estimate(:,k) = Cell_estimate(:,k) + K*(Cell_location_measure(assign(F),:)'-C*Cell_estimate(:,k));
+		end
+		k = k +1
 	end
 	% update covariance estimation
-	P = (eye(4) - K*C) * P;
+	P = (eye(4)-K*C)*P
 
 	%% store data
-	%Cell_location_estimate = [Cell_location_estimate;Q_estimate(1:2)];
-	%vel_estimate = [vel_estimate; Cell_estimate(3:4)];
+	Cell_location_estimateX(t,1:nF) = Cell_estimate(1,1:nF);
+	Cell_location_estimateY(t,1:nF) = Cell_estimate(2,1:nF);
 
-	%% plot the image with the tracking
-	imagesc(img);
-	exit off
-	colormap(gray);
-	hold on;
-	plot(Cell_estimate(2), Cell_estimate(1),’.r’);
+	% find the new detections and lost detections
+	new_track = [];
+	new_track = Cell_location_measure(~ismember(1:size(Cell_location_measure,1),assign),:)';
+	if ~isempty(new_track)
+            for z = 1:size(new_track,2)
+                Cell_estimate(:,nF) = [new_track(:,z); zeros(2,1)];
+                nF = nF + 1;
+            end
+	end
 
-	hold off;
-	pause(0.1); 
-end	
-	
+	% give a strike to any tracking that did not matched up to a detection
+	no_track_list = find(assign == 0);
+	if ~isempty(no_track_list)
+		strk_traks(no_track_list) =  strk_traks(no_track_list)+1;
+	end
 
+	% if a track has a strike greater than 6, delete  the tracking
+	bad_tracks = find(strk_traks > 6);
+	Cell_estimate(:,bad_tracks) = NaN; 
 
+	% clf
+	img = imread(frame_list(t).name);
+	imshow(img)
+    hold on
 
+	T = size(Cell_location_estimateX,2);
+	Ms = [3,5]; % marker sizes
+	color_list = ['b','g','c','m','y'];
+	for Dc = 1:nF
+		if ~isnan(Cell_location_estimateX(t,Dc))
+			Sz = mod(Dc,2)+1;
+			Cz = mod(Dc,5)+1;
+			tmX = Cell_location_estimateX(1:t,Dc);
+			tmY = Cell_location_estimateY(1:t,Dc);
+			plot(tmX,tmY,'*','markersize',Ms(Sz)','color',color_list(Cz),'linewidth',3)
+            hold on
+            axis off
+        end 
+    end
+    for z = 1:t
+       x_position = cell2mat(X(z));
+       y_position = cell2mat(Y(z));
 
+       for zz = 1:size(X{z},1)
+           x = x_position(zz,:);
+           y = y_position(zz,:); 
+           plot(x,y,'.r','MarkerSize',15);    
+       end
+    end
 
-
-
-
-
-
-
-
-
-
-
+	pause 
+	t
+end
