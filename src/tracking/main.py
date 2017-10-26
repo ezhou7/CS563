@@ -1,73 +1,95 @@
 import cv2
-from tracking import color
-from tracking.cell_detector import find_cells
-from tracking.debug import show_image
-from tracking.draw import draw_cell
-from tracking.image import smooth_image
-from tracking.path import DataPath
-from tracking.state import initial_state_from_cell
+from tracking import bcell
+from tracking import cv_color
+from tracking.cell_detector import register_cells
+from tracking.draw import display_cell, display_cells, display_particles
+from tracking.image import preprocess_image, show_image
+from tracking.motion import move_particles
+from tracking.reader import read_image
+from tracking.state import initial_state, update_state, prune_particles, find_mean_particle, populate_particles
 
 
-def process_image_file(filepath: str):
-    # read original image into memory
-    original = cv2.imread(filepath, cv2.IMREAD_GRAYSCALE)
+NUM_PARTICLES = 100
 
-    # smooth image
-    smoothed = smooth_image(original)
 
-    # binarize image to black and white
-    _, threshed = cv2.threshold(smoothed, color.MAX_COLOR_DENSITY / 2 + 1, color.MAX_COLOR_DENSITY, cv2.THRESH_BINARY)
+def track_cells():
+    for i in range(3):
+        original = read_image(i)
+        cropped, smoothed, threshed, contoured, contours = preprocess_image(original)
 
-    # create contours of cells in binarized image
-    contoured_image, contours, hierarchy = cv2.findContours(threshed, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-
-    # detect cells in image
-    cells_image, cells, cell_contours = find_cells(contoured_image, contours)
+        cells, _ = register_cells(contours)
 
 
 def main():
     # sample image path
-    path = DataPath.get_image_num(1)
+    original = read_image(1)
 
-    # read original image into memory
-    original = cv2.imread(path, cv2.IMREAD_GRAYSCALE)
-
-    cropped = original[5:original.shape[0] - 5, 5:original.shape[1] - 5]
-
-    # smooth image
-    smoothed = smooth_image(cropped)
-
-    # binarize image to black and white
-    _, threshed = cv2.threshold(smoothed, color.MAX_COLOR_DENSITY * 2 / 5, color.MAX_COLOR_DENSITY, cv2.THRESH_BINARY)
-
-    # create contours of cells in binarized image
-    contoured_image, contours, hierarchy = cv2.findContours(threshed, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    # process image
+    cropped, smoothed, threshed, contoured, contours = preprocess_image(original)
 
     # detect cells in image
-    cells_image, cells, cell_contours = find_cells(contoured_image, contours)
-
-    print(len(cell_contours))
+    cells, cell_contours = register_cells(contours)
 
     # draw cell contours
-    cv2.drawContours(cells_image, cell_contours, -1, (0, 0, 255), 3)
+    cells_image = cv2.cvtColor(contoured, cv2.COLOR_GRAY2BGR)
+
+    # display_cell_contours(cells_image, cell_contours, cell_idx=-1)
+    # display_rect_bounds(cells_image, cell_contours)
+    # display_circle_bounds(cells_image, cell_contours)
 
     # show image of drawn contours
-    show_image("contoured_image", cells_image)
+    # show_image("contoured_image", cells_image)
 
     # create sample cell particles
-    cell_particles = initial_state_from_cell(cells_image.shape, cells[0], 100)
+    cell_particles = initial_state(cells_image.shape, cells[0], num_particles=100)
 
     # create color image for display
     particle_image = cv2.cvtColor(smoothed.copy(), cv2.COLOR_GRAY2BGR)
 
     # draw cell particles
-    for particle in cell_particles:
-        draw_cell(particle_image, particle, color.GREEN)
+    display_particles(particle_image, cell_particles, bcell.PARTICLE_COLOR)
 
-    draw_cell(particle_image, cells[0], color.RED)
+    display_cell(particle_image, cells[0], bcell.CELL_COLOR)
 
     # display cell particles
-    show_image("particle_image", particle_image)
+    # show_image("particle_image", particle_image)
+
+    # Image 2
+
+    original2 = read_image(2)
+
+    cropped2, smoothed2, threshed2, contoured2, contours2 = preprocess_image(original2)
+
+    cells2, cell_contours2 = register_cells(contours2)
+
+    prev_c = cells[0, bcell.FIRST_POS_INDEX:bcell.LAST_POS_INDEX]
+    curr_c = cells2[0, bcell.FIRST_POS_INDEX:bcell.LAST_POS_INDEX]
+    mov_vec = curr_c - prev_c
+
+    move_particles(cell_particles, mov_vec)
+
+    update_state(cell_particles, cells2[0])
+
+    pruned_particles = prune_particles(cell_particles)
+
+    mean_particle = find_mean_particle(pruned_particles)
+
+    display_cells(particle_image, pruned_particles, cv_color.LIGHT_ORANGE)
+
+    display_cell(particle_image, cells2[0], bcell.CELL_COLOR)
+
+    display_cell(particle_image, mean_particle, cv_color.DEEP_SKY_BLUE)
+
+    # show_image("particle_image", particle_image)
+
+    cell_particles2 = populate_particles(pruned_particles, num_particles=100)
+
+    particle_image2 = cv2.cvtColor(smoothed2.copy(), cv2.COLOR_GRAY2BGR)
+
+    display_particles(particle_image2, cell_particles2, bcell.PARTICLE_COLOR)
+    display_cell(particle_image2, cells2[0], bcell.CELL_COLOR)
+
+    show_image("particle_image_2", particle_image2)
 
 
 if __name__ == "__main__":

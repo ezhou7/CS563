@@ -1,43 +1,51 @@
 import numpy as np
-from scipy import stats
-from typing import List, Tuple
-from tracking.cell import Cell, CellParticle
+from scipy.stats import norm
+from tracking import bcell
+from tracking.motion import many_to_one_dist
 
 
-class State:
-    def __init__(self, prev_particles: List[Tuple[Cell, float]]):
-        pass
-
-    def update_weights(self):
-        pass
+WEIGHT_THRESHOLD = 0.38
 
 
-def initial_state_from_cell(image_2d_dims, cell: Cell, size: int):
-    X = np.random.random_integers(0, image_2d_dims[0], (size, 1))
-    Y = np.random.random_integers(0, image_2d_dims[1], (size, 1))
+def initial_state(image_dim: np.array, cell: np.array, num_particles: int):
+    X = np.random.random_integers(0, image_dim[0], (num_particles,))
+    Y = np.random.random_integers(0, image_dim[1], (num_particles,))
 
-    radius = cell.get_radius()
-    V = np.random.random_integers(-radius, radius, size=(size, 2))
+    radii = np.ones((num_particles,)) * cell[bcell.RADIUS_INDEX]
+    weights = np.zeros((num_particles,))
 
-    return [CellParticle(center=(x, y), radius=cell.get_radius(), velocity=(v[0], v[1])) for x, y, v in zip(X, Y, V)]
+    particles = [X, Y, radii, weights]
+
+    return np.array(particles).T.astype("float32")
 
 
-def update_state(curr_cell, prev_particles):
-    curr_center = curr_cell.get_center()
-    curr_velocity = curr_cell.get_velocity()
+def update_state(particles: np.array, curr_cell: np.array):
+    normal_distro = norm()
 
-    for particle in prev_particles:
-        prev_center = particle.get_center()
-        prev_velocity = particle.get_velocity()
+    cell_magnitude = np.linalg.norm(curr_cell[bcell.FIRST_POS_INDEX:bcell.LAST_POS_INDEX], axis=0)
+    dists = many_to_one_dist(particles, curr_cell)
 
-        row_magnitude_center = curr_center[0] - prev_center[0]
-        col_magnitude_center = curr_center[1] - prev_center[0]
-        center_salience = np.sqrt(row_magnitude_center ** 2 + col_magnitude_center ** 2)
+    new_weights = [normal_distro.pdf(dist / cell_magnitude) for dist in dists]
+    particles[:, bcell.WEIGHT_INDEX] = np.array(new_weights).astype("float32")
 
-        row_magnitude_velocity = curr_velocity[0] - prev_velocity[0]
-        col_magnitude_velocity = curr_velocity[1] - prev_velocity[1]
-        velocity_salience = np.sqrt(row_magnitude_velocity ** 2 + col_magnitude_velocity ** 2)
 
-        salience = center_salience * velocity_salience
+def prune_particles(particles: np.array, threshold: float=WEIGHT_THRESHOLD):
+    return particles[particles[:, bcell.WEIGHT_INDEX] >= threshold, :]
 
-        prob = stats.norm()
+
+def find_mean_particle(particles: np.array):
+    position = np.mean(particles[:, bcell.FIRST_POS_INDEX:bcell.LAST_POS_INDEX], axis=0)
+    return np.concatenate([position, particles[0, bcell.RADIUS_INDEX:bcell.WEIGHT_INDEX]])
+
+
+def populate_particles(pruned_particles: np.array, num_particles: int):
+    mean = find_mean_particle(pruned_particles)[bcell.FIRST_POS_INDEX:bcell.LAST_POS_INDEX]
+    covar = np.cov(pruned_particles[:, bcell.X_POS_INDEX], pruned_particles[:, bcell.Y_POS_INDEX])
+
+    positions = np.random.multivariate_normal(mean, covar, size=num_particles)
+
+    radii = np.ones((num_particles, 1)) * pruned_particles[0, bcell.RADIUS_INDEX]
+    weights = np.zeros((num_particles, 1))
+
+    return np.concatenate([positions, radii, weights], axis=1)
+

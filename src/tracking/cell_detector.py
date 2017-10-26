@@ -1,35 +1,21 @@
 import cv2
-from tracking import color
-from tracking.cell import Cell
+import numpy as np
+from typing import List, Tuple
 
 
-def find_cells(src, contours):
-    color_image = cv2.cvtColor(src.copy(), cv2.COLOR_GRAY2BGR)
-
-    contour_areas = [cv2.contourArea(contour) for contour in contours]
-
-    print(contour_areas)
-
-    cells = []
-    cell_contours = []
-    for contour, area in zip(contours, contour_areas):
-        if area < 100:
-            continue
-
-        cell_contours.append(contour)
-
-        # show rectangle bound on cell
-        x, y, width, height = cv2.boundingRect(contour)
-        cv2.rectangle(color_image, (x, y), (x + width, y + height), color.GREEN, thickness=2)
-
+def register_cells(contours: List[np.array]) -> Tuple[np.array, np.array]:
+    """
+    return cell positions from given contour information
+    :param contours: contours of cells
+    :return: array of cells
+    """
+    def create_cell(contour: np.array) -> np.array:
         center, radius = cv2.minEnclosingCircle(contour)
+        weight = -1
 
-        center = (int(center[0]), int(center[1]))
-        radius = int(radius)
+        return np.array([center[0], center[1], radius, weight])
 
-        # show circle bound on cell
-        cv2.circle(color_image, center, radius, color.GREEN, thickness=2)
+    areas = np.array([cv2.contourArea(contour) for contour in contours]).astype("float32")
+    blobs = np.array([create_cell(contour) for contour in contours]).astype("int32")
 
-        cells.append(Cell(center, radius, area))
-
-    return color_image, cells, cell_contours
+    return blobs[areas >= 100].astype("float32"), np.array(contours)[areas >= 100]
