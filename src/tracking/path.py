@@ -5,7 +5,7 @@ from tracking.path_util import PathUtil
 class DataPath:
     @staticmethod
     def get_images_dir():
-        return os.path.expanduser("~/Documents/Emory/Senior/CS563/hw2/2D_images/")
+        return os.path.expanduser("~/Documents/Emory/Senior/CS563/project/2D_images/")
 
     @staticmethod
     def get_image_num(num: int=0):

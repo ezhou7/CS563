@@ -15,6 +15,7 @@ def show_image(name: str, image: np.array):
     """
     cv2.namedWindow(name, cv2.WINDOW_NORMAL)
     cv2.resizeWindow(name, 800, 800)
+    cv2.moveWindow(name, 20, 20)
 
     cv2.imshow(name, image)
     cv2.waitKey(0)
@@ -40,7 +41,7 @@ def preprocess_image(image: np.array):
     # create contours of cells in binarized image
     contoured, contours, _ = cv2.findContours(threshed, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
-    return cropped, smoothed, threshed, contoured, contours
+    return smoothed, contours
 
 
 def smooth_image(image: np.array):
@@ -57,7 +58,7 @@ def smooth_image(image: np.array):
     return avg_blurred
 
 
-def get_image_corners(image: np.array):
+def get_image_corners(image: np.array) -> np.array:
     """
     Returns four corners of 2D image.
     1st +-------------+ 4th

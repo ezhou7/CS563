@@ -1,5 +1,5 @@
 import json
-from tracking.cell_detector import register_cells
+from tracking.detector import register_cells
 from tracking.image import preprocess_image
 from tracking.reader import read_image
 
