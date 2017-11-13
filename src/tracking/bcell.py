@@ -10,12 +10,18 @@ MAX_INDICES = 4
 BEG_POS_INDEX = 0
 END_POS_INDEX = 2
 
+BEG_VEL_INDEX = 2
+END_VEL_INDEX = 4
+
 # Individual indices
 X_POS_INDEX = 0
 Y_POS_INDEX = 1
 
-RADIUS_INDEX = 2
-WEIGHT_INDEX = 3
+X_VEL_INDEX = 2
+Y_VEL_INDEX = 3
+
+RADIUS_INDEX = 4
+WEIGHT_INDEX = 5
 
 
 # ---- Cell graphics information ---- #

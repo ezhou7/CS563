@@ -3,7 +3,7 @@ import numpy as np
 from typing import List, Tuple
 
 
-def register_cells(contours: List[np.array]) -> Tuple[np.array, np.array]:
+def register_cells(contours: List[np.array]) -> np.array:
     """
     return cell positions from given contour information
     :param contours: contours of cells
@@ -11,9 +11,10 @@ def register_cells(contours: List[np.array]) -> Tuple[np.array, np.array]:
     """
     def create_cell(contour: np.array) -> np.array:
         center, radius = cv2.minEnclosingCircle(contour)
+        v = (0, 0)
         weight = -1
 
-        return np.array([center[0], center[1], radius, weight])
+        return np.array([center[0], center[1], v[0], v[1], radius, weight])
 
     areas = np.array([cv2.contourArea(contour) for contour in contours]).astype("float32")
     blobs = np.array([create_cell(contour) for contour in contours]).astype("int32")

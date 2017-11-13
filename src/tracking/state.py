@@ -12,12 +12,15 @@ def initialize_state(image_dim: np.array, cells: np.array, num_particles: int):
     X = np.random.random_integers(0, image_dim[0], (total_num_particles,))
     Y = np.random.random_integers(0, image_dim[1], (total_num_particles,))
 
+    VX = np.zeros(shape=(total_num_particles,))
+    VY = np.zeros(shape=(total_num_particles,))
+
     radii = np.ones((num_particles, cells.shape[0])) * np.tile(cells[:, bcell.RADIUS_INDEX], (num_particles, 1))
     radii = radii.T.reshape((total_num_particles,))
 
     weights = np.zeros((total_num_particles,))
 
-    particles = [X, Y, radii, weights]
+    particles = [X, Y, VX, VY, radii, weights]
 
     return np.array(particles).T.reshape((cells.shape[0], num_particles, len(particles))).astype("float32")
 

@@ -8,7 +8,7 @@ from tracking import bcell
 from tracking.detector import register_cells
 from tracking.draw import display_cells, display_predictions
 from tracking.image import preprocess_image, show_image
-from tracking.motion import many_to_one_dist, get_velocities, move_particles
+from tracking.motion import many_to_one_dist, get_velocities, move_particles, move
 from tracking.reader import read_image
 from tracking.state import initialize_state, update_state, resample, get_dists_from_landmarks
 
@@ -35,6 +35,24 @@ def expected_value(particles_all):
     return np.hstack((x_avg, y_avg))
 
 
+def create_shadows_if_overlap(prev_cells, assignments):
+    prev_assignments = assignments[:, 1]
+
+    prev_set = set([i for i in range(len(prev_cells))])
+    assigned_set = set(prev_assignments.tolist())
+    diff_set = prev_set - assigned_set
+
+    new_assignments = assignments.tolist()
+
+    i = prev_assignments.shape[0]
+
+    for unassigned in diff_set:
+        new_assignments.append([i, unassigned])
+        i += 1
+
+    return np.array(new_assignments), diff_set
+
+
 def track_cells():
     prev_cells = np.zeros((0,))
     particles_all = np.zeros((0,))
@@ -42,7 +60,7 @@ def track_cells():
     display1 = read_image(1)
     display2 = cv2.cvtColor(display1, cv2.COLOR_GRAY2BGR)
 
-    for i in range(10):
+    for i in range(20):
         original = read_image(i + 1)
         smoothed, contours = preprocess_image(original)
 
@@ -57,12 +75,24 @@ def track_cells():
         cost_matrix = np.array([many_to_one_dist(prev_cells, cell) for cell in cells])
 
         # current cells, previous cells
-        assignments = np.array(_hungarian(cost_matrix))
+        assignments = _hungarian(cost_matrix)
+
+        if prev_cells.shape[0] > assignments.shape[0]:
+            assignments, unassigned_set = create_shadows_if_overlap(prev_cells, assignments)
+
+            cells_list = cells.tolist()
+
+            for unassigned in unassigned_set:
+                move(prev_cells[unassigned])
+                cells_list.append(prev_cells[unassigned].tolist())
+
+            cells = np.array(cells_list)
 
         prev_cells = prev_cells[assignments[:, 1]]
         particles_all = particles_all[assignments[:, 1]]
 
         velocities = get_velocities(prev_cells, cells)
+        cells[:, bcell.BEG_VEL_INDEX:bcell.END_VEL_INDEX] = velocities
         velocity_noise = np.random.randn(particles_all.shape[0], particles_all.shape[1], bcell.END_POS_INDEX) * 30
 
         move_particles(particles_all, velocities, velocity_noise)
